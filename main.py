@@ -9,6 +9,7 @@ import torch
 import io
 
 
+
 classes = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
 
 class CifarmClassification(nn.Module):
