@@ -9,10 +9,10 @@ import torch
 import io
 
 
-
 classes = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
 
-class CifarmClassification(nn.Module):
+
+class CifarClassification(nn.Module):
     def __init__(self):
         super().__init__()
         self.first = nn.Sequential(
@@ -32,67 +32,86 @@ class CifarmClassification(nn.Module):
             nn.Flatten(),
             nn.Linear(128 * 4 * 4, 256),
             nn.ReLU(),
+            nn.Dropout(0.5),
             nn.Linear(256, 10)
         )
+
     def forward(self, image):
         image = self.first(image)
         image = self.second(image)
         return image
 
+
 transform = transforms.Compose([
-    transforms.Grayscale(num_output_channels=3),
     transforms.Resize((32, 32)),
-    transforms.ToTensor()
+    transforms.ToTensor(),
 ])
 
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-model = CifarmClassification()
-model.load_state_dict(torch.load('cifar_10_model.pth', map_location=device))
-model.to(device)
+
+model = CifarClassification().to(device)
+model.load_state_dict(torch.load('model_CIFAR_10.pth', map_location=device))
 model.eval()
 
-# app = FastAPI()
+app = FastAPI(title="CIFAR-10 Classifier")
+
+
+@app.post('/predict')
+async def check_image(file: UploadFile = File(...)):
+    try:
+        data = await file.read()
+        if not data:
+            raise HTTPException(status_code=400, detail='Empty file')
+
+        img = Image.open(io.BytesIO(data)).convert('RGB')
+        img_tensor = transform(img).unsqueeze(0).to(device)
+
+        with torch.no_grad():
+            output = model(img_tensor)
+            predicted_class = output.argmax(dim=1).item()
+
+        return {"class": classes[predicted_class]}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+if __name__ == '__main__':
+    uvicorn.run(app, host='127.0.0.1', port=8000)
+
+
+
+# st.title('🎨 CIFAR-10 Классификатор')
+# st.write('Загрузите изображение (самолёт, машина, птица и т.д.), и модель попробует определить класс')
 #
-# @app.post('/predict')
-# async def check_image(file:UploadFile = File(...)):
-#     try:
-#         data = await file.read()
-#         if not data:
-#             raise HTTPException(status_code=400, detail='File not Found')
+# uploaded_file = st.file_uploader(
+#     "Выберите изображение",
+#     type=['png', 'jpg', 'jpeg']
+# )
 #
-#         img = Image.open(io.BytesIO(data))
-#         img_tensor = transform(img).unsqueeze(0).to(device)
+# if uploaded_file is not None:
+#     image = Image.open(uploaded_file).convert('RGB')
+#     st.image(image, caption='Загруженное изображение', use_column_width=True)
 #
-#         with torch.no_grad():
-#             prediction = model(img_tensor)
-#             result = prediction.argmax(dim=1).item()
-#             return {f'class': classes[result]}
+#     if st.button('🔍 Распознать', type='primary'):
+#         try:
+#             img_tensor = transform(image).unsqueeze(0).to(device)
 #
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f'{e}')
+#             with torch.no_grad():
+#                 output = model(img_tensor)
+#                 predicted_idx = output.argmax(dim=1).item()
+#                 confidence = torch.softmax(output, dim=1)[0][predicted_idx].item()
 #
-# if __name__ == '__main__':
-#     uvicorn.run(app, host='127.0.0.1', port=8000)
+#             st.success(f'**Модель думает, что это: {classes[predicted_idx]}**')
+#             st.info(f'Уверенность: {confidence:.1%}')
 
-st.title('Cifar-10 Model')
-st.text('Загрузите изображение, и модель попробует её распознать.')
-
-mnist_image = st.file_uploader('Выберите изображение', type=['PNG', 'JPG', 'JPEG', 'SVG'])
-
-if not mnist_image:
-    st.info('Загрузите изображение')
-else:
-    st.image(mnist_image, caption='Загруженное изображение')
-
-    if st.button('Распознать'):
-        try:
-            image = Image.open(mnist_image)
-            image_tensor = transform(image).unsqueeze(0).to(device)
-
-            with torch.no_grad():
-                y_prediction = model(image_tensor)
-                prediction = y_prediction.argmax(dim=1).item()
-            st.success(f'Модель думает, что это: {classes[prediction]}')
-
-        except Exception as e:
-            st.error(f'Ошибка: {str(e)}')
+#             probs = torch.softmax(output, dim=1)[0]
+#             st.bar_chart(dict(zip(classes, probs.cpu().numpy())))
+#
+#         except Exception as e:
+#             st.error(f'Ошибка при обработке: {str(e)}')
+# else:
+#     st.info('👆 Загрузите изображение выше')
+#
+# st.caption('Модель обучена на датасете CIFAR-10')
